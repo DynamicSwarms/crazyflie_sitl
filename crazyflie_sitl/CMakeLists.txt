@@ -49,16 +49,43 @@ target_link_libraries(quadcopter_model
   yaml-cpp
 )
 
+## Build connection library
 
+set(
+    COMMUNICATION_SRCS
+    src/communication/firmwarelink.cpp
+    src/communication/radiolink.cpp
+    src/communication/sitl_communication.cpp
+)
 
+add_library(communication_lib
+  ${COMMUNICATION_SRCS}
+)
+set_target_properties(communication_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_compile_features(communication_lib PUBLIC cxx_std_17)
 
+target_include_directories(communication_lib PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/crazyflie_sitl>
+  $<INSTALL_INTERFACE:include>
+)
 
+## Build the firmware laucher lib
+add_library(firmware_launcher_lib
+  src/firmware_launcher.cpp
+)
+set_target_properties(firmware_launcher_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_compile_features(firmware_launcher_lib PUBLIC cxx_std_17)
 
+target_include_directories(firmware_launcher_lib PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
 
-
-# Link the quadcopter_model library to the crazyflie_sitl executable
+# Link the quadcopter_model and connection library to the crazyflie_sitl executable
 target_link_libraries(crazyflie_sitl
   quadcopter_model
+  communication_lib
+  firmware_launcher_lib
 )
 ament_target_dependencies(crazyflie_sitl
   rclcpp
@@ -69,6 +96,10 @@ ament_target_dependencies(crazyflie_sitl
 
 install(TARGETS crazyflie_sitl
   DESTINATION lib/${PROJECT_NAME})
+
+install(PROGRAMS firmware/cf2
+  DESTINATION lib/${PROJECT_NAME} 
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

@@ -10,6 +10,11 @@
 #include "crtp_interfaces/msg/crtp_packet.hpp"
 #include "crtp_interfaces/msg/crtp_response.hpp"
 
+#include "communication/sitl_communication.hpp"
+#include "communication/sitl_packets.hpp"
+
+#include "firmware_launcher.hpp"
+
 using namespace std::chrono_literals;
 using namespace flightlib;
 using std::placeholders::_1;
@@ -58,92 +63,13 @@ float pwm_to_thrust(float x)
     return 0;
 }
 
-#define CRTP_PORT_LOCALIZATION 0x06
-#define CRTP_PORT_SETPOINT_SIM 0x09
-
-#define LOCALIZATION_POSITION_CHANNEL 0
-#define LOCALIZATION_GENERIC_CHANNEL 1
-
-#define LOCALIZATION_GENERIC_EXT_POSE_TYPE 8
-
-// Conversion coefficient for Crazyflie
-#define MAG_GAUSS_PER_LSB                                 666.7
-#define SENSORS_DEG_PER_LSB_CFG                           ((2 * 2000.0) / 65536.0)
-#define SENSORS_G_PER_LSB_CFG                             ((2 * 16) / 65536.0)
-
-#define PI_CF 3.14159265359
-#define DEG_TO_RAD_CF (PI_CF/180.0)
-#define RAD_TO_DEG_CF (180.0/PI_CF)
-#define GRAVITY_MAGNITUDE_CF (9.81) // we use the magnitude such that the sign/direction is explicit in calculations
-// Sensor type (first byte of crtp packet)
-enum SensorTypeSim_e {
-  SENSOR_GYRO_ACC_SIM   = 0,
-  SENSOR_MAG_SIM        = 1,
-  SENSOR_BARO_SIM       = 2,
-};
-
-
-union Axis3i16 {
-	struct {
-		int16_t x;
-		int16_t y;
-		int16_t z;
-	};
-	int16_t axis[3];
-}__attribute__((packed));
-
-union Axis3f {
-	struct {
-		float x;
-		float y;
-		float z;
-	};
-	float axis[3];
-}__attribute__((packed));
-
-struct baro_s {
-	uint8_t type;
-	float pressure;           // mbar
-	float temperature;        // degree Celcius
-	float asl;                // m (ASL = altitude above sea level)
-} __attribute__((packed));
-
-struct imu_s {
-	uint8_t type;
-	union Axis3i16 acc;
-	union Axis3i16 gyro;
-} __attribute__((packed));
-
-struct mag_s {
-	uint8_t type;
-	union Axis3i16 mag;
-} __attribute__((packed));
-
-struct pos_s {
-	float x; 
-  float y;
-  float z;
-
-} __attribute__((packed));
-
-struct pose_s
-{
-  float x; // in m
-  float y; // in m
-  float z; // in m
-  float qx;
-  float qy;
-  float qz;
-  float qw;
-} __attribute__((packed));
-
-
 class CrazyflieSITL : public rclcpp::Node
 {
 public:
   CrazyflieSITL()
   : Node("crazyflie_sitl")
   , m_cmd()
+  , m_firmware_launcher(std::make_unique<FirmwareLauncher>()) // Launch the firmware
   {
     // Crazyflie parameters
     const Scalar mass = 0.02;//0.032;      // kg
@@ -168,6 +94,9 @@ public:
     m_tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
     client_ = this->create_client<crtp_interfaces::srv::CrtpPacketSend>("crazyradio/send_crtp_packet80");
 
+    uint16_t port = 19950;
+    m_communication = std::make_unique<sitl_communication::SITLCommunication>(0,port);
+
     crtp_response_sub_ = this->create_subscription<crtp_interfaces::msg::CrtpResponse>(
       "crazyradio/crtp_response",
       rclcpp::QoS(100),
@@ -181,100 +110,49 @@ public:
     RCLCPP_INFO(this->get_logger(), "CrazyflieSITL node started");
   }
 
-private:
-crtp_interfaces::msg::CrtpPacket get_barometer()
-{
-  crtp_interfaces::msg::CrtpPacket packet;
-  packet.port = CRTP_PORT_SETPOINT_SIM;
-  packet.channel = 0;
-  packet.data_length = sizeof(baro_s);
-  baro_s baro_data;
-  baro_data.type = SENSOR_BARO_SIM;
-  baro_data.pressure = 1013.25; // mbar
-  baro_data.temperature = 25.0; // degree Celcius
-  baro_data.asl = 100.0; // m (ASL = altitude above sea level)
-  memcpy(packet.data.data(), &baro_data, sizeof(baro_s));
-  return packet;
-}
 
-crtp_interfaces::msg::CrtpPacket get_imu(const QuadState& state)
+
+void get_pose_packet(const QuadState& state, uint8_t* buffer, size_t& length)
 {
-  crtp_interfaces::msg::CrtpPacket packet;
-  packet.port = CRTP_PORT_SETPOINT_SIM;
-  packet.channel = 0;
-  packet.data_length = sizeof(imu_s);
-  imu_s imu_data;
-  imu_data.type = SENSOR_GYRO_ACC_SIM;
-  imu_data.acc.x = static_cast<int16_t>(state.ba[0] / 	SENSORS_G_PER_LSB_CFG 		/ GRAVITY_MAGNITUDE_CF);  // 0.0; // m/s^2
-  imu_data.acc.y = static_cast<int16_t>(state.ba[1] / 	SENSORS_G_PER_LSB_CFG 		/ GRAVITY_MAGNITUDE_CF);  // 0.0; // m/s^2
-  imu_data.acc.z = static_cast<int16_t>(state.ba[2] / 	SENSORS_G_PER_LSB_CFG 		/ GRAVITY_MAGNITUDE_CF);  // 2048.0 = -9.81; // m/s^2
+  sitl_communication::packets::crtp_pose_packet_s packet;
+  packet.pose_data.x = state.x[QS::POSX]; // m
+  packet.pose_data.y = state.x[QS::POSY]; // m
+  packet.pose_data.z = state.x[QS::POSZ]; // m
+  packet.pose_data.qx = state.x[QS::ATTX];
+  packet.pose_data.qy = state.x[QS::ATTY];
+  packet.pose_data.qz = state.x[QS::ATTZ];
+  packet.pose_data.qw = state.x[QS::ATTW];
   
-  //RCLCPP_INFO(this->get_logger(), "QuadState BAcc: x=%f, y=%f, z=%f", state.x[QS::BACCX], state.x[QS::BACCY], state.x[QS::BACCZ]);
-  //RCLCPP_INFO(this->get_logger(), "QuadState Acc: x=%f, y=%f, z=%f", state.x[QS::ACCX], state.x[QS::ACCY], state.x[QS::ACCZ]);
-//
-  //RCLCPP_INFO(this->get_logger(), "IMU Acc: x=%d, y=%d, z=%d", imu_data.acc.x, imu_data.acc.y, imu_data.acc.z);
-  imu_data.gyro.x = static_cast<int16_t>(state.bw[0] / SENSORS_DEG_PER_LSB_CFG 	/ DEG_TO_RAD_CF); // deg/s
-  imu_data.gyro.y = static_cast<int16_t>(state.bw[1] / SENSORS_DEG_PER_LSB_CFG 	/ DEG_TO_RAD_CF); // deg/s
-  imu_data.gyro.z = static_cast<int16_t>(state.bw[2] / SENSORS_DEG_PER_LSB_CFG 	/ DEG_TO_RAD_CF); // deg/s
-  memcpy(packet.data.data(), &imu_data, sizeof(imu_s));
-  return packet;
+  length = sizeof(sitl_communication::packets::crtp_pose_packet_s);
+  std::memcpy(buffer, &packet, length);
 }
 
-crtp_interfaces::msg::CrtpPacket get_mag()
+void get_imu_packet(const QuadState& state, uint8_t* buffer, size_t& length)
 {
-  crtp_interfaces::msg::CrtpPacket packet;
-  packet.port = CRTP_PORT_SETPOINT_SIM;
-  packet.channel = 0;
-  packet.data_length = sizeof(mag_s);
-  mag_s mag_data;
-  mag_data.type = SENSOR_MAG_SIM;
-  mag_data.mag.x = 0.0; // uT
-  mag_data.mag.y = 0.0; // uT
-  mag_data.mag.z = 0.0; // uT
-  memcpy(packet.data.data(), &mag_data, sizeof(mag_s));
-  return packet;
+  sitl_communication::packets::crtp_imu_packet_s packet;
+
+  packet.imu_data.acc.x = static_cast<int16_t>(state.ba[0] / 	SENSORS_G_PER_LSB_CFG 		/ GRAVITY_MAGNITUDE_CF);  // 0.0; // m/s^2
+  packet.imu_data.acc.y = static_cast<int16_t>(state.ba[1] / 	SENSORS_G_PER_LSB_CFG 		/ GRAVITY_MAGNITUDE_CF);  // 0.0; // m/s^2
+  packet.imu_data.acc.z = static_cast<int16_t>(state.ba[2] / 	SENSORS_G_PER_LSB_CFG 		/ GRAVITY_MAGNITUDE_CF);  // 2048.0 = -9.81; // m/s^2
+  packet.imu_data.gyro.x = static_cast<int16_t>(state.bw[0] / SENSORS_DEG_PER_LSB_CFG 	/ DEG_TO_RAD_CF); // deg/s
+  packet.imu_data.gyro.y = static_cast<int16_t>(state.bw[1] / SENSORS_DEG_PER_LSB_CFG 	/ DEG_TO_RAD_CF); // deg/s
+  packet.imu_data.gyro.z = static_cast<int16_t>(state.bw[2] / SENSORS_DEG_PER_LSB_CFG 	/ DEG_TO_RAD_CF); // deg/s
+
+  length = sizeof(sitl_communication::packets::crtp_imu_packet_s);
+  std::memcpy(buffer, &packet, length);
 }
 
-crtp_interfaces::msg::CrtpPacket get_pos(const QuadState& state)
-{
-  crtp_interfaces::msg::CrtpPacket packet;
-  packet.port = CRTP_PORT_LOCALIZATION;
-  packet.channel = LOCALIZATION_GENERIC_CHANNEL;
-  packet.data_length = sizeof(pose_s) + 1; // +1 for the type of the generic packet
-  pose_s pose_data;
-  pose_data.x = state.x[QS::POSX]; // m
-  pose_data.y = state.x[QS::POSY]; // m
-  pose_data.z = state.x[QS::POSZ]; // m
-  pose_data.qx = state.x[QS::ATTX];
-  pose_data.qy = state.x[QS::ATTY];
-  pose_data.qz = state.x[QS::ATTZ];
-  pose_data.qw = state.x[QS::ATTW];
-  //RCLCPP_INFO(this->get_logger(), "Position: x=%.2f, y=%.2f, z=%.2f; Quaternion: qx=%.2f, qy=%.2f, qz=%.2f, qw=%.2f",
-  //            pose_data.x, pose_data.y, pose_data.z,
-  //            pose_data.qx, pose_data.qy, pose_data.qz, pose_data.qw);
-  packet.data[0] = LOCALIZATION_GENERIC_EXT_POSE_TYPE; // first byte is the type of the generic packet
-  memcpy(packet.data.data() + 1, &pose_data, sizeof(pose_s));
-  return packet;
-  //packet.port = CRTP_PORT_LOCALIZATION;
-  //packet.channel = LOCALIZATION_POSITION_CHANNEL;
-  //packet.data_length = sizeof(pos_s);
-  //pos_s pos_data;
-  //pos_data.x = 0.0; // m
-  //pos_data.y = 0.0; // m
-  //pos_data.z = 0.0; // m
-  //memcpy(packet.data.data(), &pos_data, sizeof(pos_s));
-  //return packet;
-}
 
   void timer_callback()
   {
-    // Create a command with single rotor thrusts in [N]
-    // Here we set all 4 rotors to the same thrust as an example.
-    
+    m_communication->handle_comms();
 
     float pwm_norm[4];
+
+    uint16_t pwms_received[4];
+    m_communication->get_motor_pwm_values(pwms_received);
     for (int i = 0; i < 4; ++i) {
-      pwm_norm[i] = static_cast<float>(last_pwms_received[i]) / static_cast<float>(std::numeric_limits<uint16_t>::max());
+      pwm_norm[i] = static_cast<float>(pwms_received[i]) / static_cast<float>(std::numeric_limits<uint16_t>::max());
       pwm_norm[i] *= 100.0f;  // scale to 0–100 range expected by pwm_to_thrust
     }
 
@@ -292,11 +170,11 @@ crtp_interfaces::msg::CrtpPacket get_pos(const QuadState& state)
   //}
 
   static bool world_is_restricted = true;
-  if (!world_is_restricted && last_pwms_received[0] == 0 && last_pwms_received[1] == 0 && last_pwms_received[2] == 0 && last_pwms_received[3] == 0) {
+  if (!world_is_restricted && pwms_received[0] == 0 && pwms_received[1] == 0 && pwms_received[2] == 0 && pwms_received[3] == 0) {
     world_is_restricted = true;
     RCLCPP_INFO(this->get_logger(), "Restricted world box");
     m_quadrotor->setWorldBox((Matrix<3, 2>() << -10, 10, -10, 10, 0.0, 10).finished());
-  } else if (world_is_restricted && !(last_pwms_received[0] == 0 && last_pwms_received[1] == 0 && last_pwms_received[2] == 0 && last_pwms_received[3] == 0)) {
+  } else if (world_is_restricted && !(pwms_received[0] == 0 && pwms_received[1] == 0 && pwms_received[2] == 0 && pwms_received[3] == 0)) {
     world_is_restricted = false;
     RCLCPP_INFO(this->get_logger(), "Unrestricted world box");
     m_quadrotor->setWorldBox((Matrix<3, 2>() << -10, 10, -10, 10, -10.0, 10).finished());
@@ -323,10 +201,10 @@ crtp_interfaces::msg::CrtpPacket get_pos(const QuadState& state)
 //
 //    }
 
-    RCLCPP_INFO(this->get_logger(), "Received PWM: %d, %d, %d, %d; Normalized: %.2f, %.2f, %.2f, %.2f; Thrusts: %.6f, %.6f, %.6f, %.6f",
-        last_pwms_received[0], last_pwms_received[1], last_pwms_received[2], last_pwms_received[3],
-        pwm_norm[0], pwm_norm[1], pwm_norm[2], pwm_norm[3],
-        m_cmd.thrusts[0], m_cmd.thrusts[1], m_cmd.thrusts[2], m_cmd.thrusts[3]);
+    //RCLCPP_INFO(this->get_logger(), "Received PWM: %d, %d, %d, %d; Normalized: %.2f, %.2f, %.2f, %.2f; Thrusts: %.6f, %.6f, %.6f, %.6f",
+    //    last_pwms_received[0], last_pwms_received[1], last_pwms_received[2], last_pwms_received[3],
+    //    pwm_norm[0], pwm_norm[1], pwm_norm[2], pwm_norm[3],
+    //    m_cmd.thrusts[0], m_cmd.thrusts[1], m_cmd.thrusts[2], m_cmd.thrusts[3]);
 
     m_cmd.t += 0.001;  // time in seconds
     if (!m_quadrotor->run(m_cmd, 0.001)) {
@@ -351,19 +229,26 @@ crtp_interfaces::msg::CrtpPacket get_pos(const QuadState& state)
       request->link.channel = 80;
       memcpy(request->link.address.data(), "\xE7\xE7\xE7\xE7\xE7", 5); // broadcast address
       
-      request->packet = get_barometer();
+
+      //request->packet = get_imu(state);
       //auto future = client_->async_send_request(request);
 
-      request->packet = get_imu(state);
-      auto future = client_->async_send_request(request);
-
-      request->packet = get_mag();
+      //request->packet = get_pos(state);
       //future = client_->async_send_request(request);
 
-      request->packet = get_pos(state);
-      future = client_->async_send_request(request);
+      uint8_t buffer[32];
+      size_t length;
+    
+      get_imu_packet(state, buffer, length);
+      m_communication->send_firmware_packet(buffer, length);
 
-
+      if (count % 10 == 0) 
+      {
+        get_pose_packet(state, buffer, length);
+        m_communication->send_firmware_packet(buffer, length);
+      
+      }
+      
       std::stringstream ss;
       ss << "State t=" << m_cmd.t
         << state << state.x[QS::ACCZ];
@@ -379,32 +264,7 @@ crtp_interfaces::msg::CrtpPacket get_pos(const QuadState& state)
       // Check if we matchh (by address and channel)
 
       if (msg->packet.port == CRTP_PORT_SETPOINT_SIM && msg->packet.channel == 0) {
-        
-        uint16_t received_pwms[4];
-        memcpy(&received_pwms, msg->packet.data.data(), sizeof(uint16_t) * 4);
-        //RCLCPP_INFO(this->get_logger(), "Received motor PWMs: %d, %d, %d, %d", received_pwms[0], received_pwms[1], received_pwms[2], received_pwms[3]);
-
-
-        bool all_above_1000 = true;
-        for (int i = 0; i < 4; ++i) {
-          if (received_pwms[i] <= 1000) {
-            all_above_1000 = false;
-            RCLCPP_WARN(this->get_logger(), "Received PWM value %d is not above 1000, ignoring this command", received_pwms[i]);
-            break;
-          }
-        }
-
-        if (all_above_1000) {
-          for (int i = 0; i < 4; ++i) {
-            last_pwms_received[i] = received_pwms[i];
-          }
-        } else {
-          for (int i = 0; i < 4; ++i) {
-            last_pwms_received[i] = 0;
-          }
-        }
-
-    
+          
         // Reconstruct address (same packing convention used elsewhere in this file)
         uint64_t address = 0;
         for (int i = 0; i < 5; i++)
@@ -453,11 +313,13 @@ crtp_interfaces::msg::CrtpPacket get_pos(const QuadState& state)
   rclcpp::Client<crtp_interfaces::srv::CrtpPacketSend>::SharedPtr client_;
   rclcpp::Subscription<crtp_interfaces::msg::CrtpResponse>::SharedPtr crtp_response_sub_;
 
+  std::unique_ptr<sitl_communication::SITLCommunication> m_communication;
+
   std::unique_ptr<tf2_ros::TransformBroadcaster> m_tf_broadcaster;
   std::string m_world_id = "world";
   std::string m_frame_id = "cf231";
 
-  uint16_t last_pwms_received[4] = {0, 0, 0, 0};
+  std::unique_ptr<FirmwareLauncher> m_firmware_launcher;
 };
 
 int main(int argc, char ** argv)
