@@ -82,8 +82,8 @@ void Radiolink::handle_to_radio_packets(bool send_nullpacket_in_any_case)
         out_packet = m_firmware_to_radio_queue->front();  
         m_firmware_to_radio_queue->pop();
 
-        if (out_packet.data[0] != 0xF3)
-            std::cerr << "Sending to radio: " << std::hex << int(out_packet.data[0]) << " queue: " << int(m_firmware_to_radio_queue->empty()) << std::endl;
+        // if (out_packet.data[0] != 0xF3)
+        //     std::cerr << "Sending to radio: " << std::hex << int(out_packet.data[0]) << " queue: " << int(m_firmware_to_radio_queue->empty()) << std::endl;
       
     } else if (send_nullpacket_in_any_case > 0) {
         out_packet.data[0] = 0xF3;
@@ -120,7 +120,7 @@ Radiolink::handle_from_radio_packets()
 
         m_connected = true;
 
-        std::cerr << std::hex << "Received from Radio: " << int(buffer[0]) << std::endl;
+        //std::cerr << std::hex << "Received from Radio: " << int(buffer[0]) << std::endl;
         return false;
     }
     return false;

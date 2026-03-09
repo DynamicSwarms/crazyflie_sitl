@@ -63,10 +63,6 @@ void SITLCommunication::handle_firmware_packet(const uint8_t* packet, size_t pac
         }
         //  We originally checked if they are all above 1000, otherwise skipped...
     } else if (packet_length > 0) {
-        std::cerr << "Enqueing: " <<std::hex;
-            for (int i= 0; i < packet_length; i++) std::cerr << int(packet[i]) << " ";
-        std::cerr <<std::endl;
-        
         sitl_communication::packets::queue_packet queue_packet;
         std::memcpy(queue_packet.data, packet, packet_length);
         queue_packet.data_length = packet_length;
