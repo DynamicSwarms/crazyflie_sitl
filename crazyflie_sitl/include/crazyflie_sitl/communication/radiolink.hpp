@@ -37,4 +37,6 @@ private:
 
     std::shared_ptr<std::queue<sitl_communication::packets::queue_packet>> m_radio_to_firmware_queue;
     std::shared_ptr<std::queue<sitl_communication::packets::queue_packet>> m_firmware_to_radio_queue;
+
+    size_t m_control_loop_count = 0;
 };

@@ -13,6 +13,7 @@ find_package(yaml-cpp REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(crtp_interfaces REQUIRED)
+find_package(rclcpp_components REQUIRED)
 
 include_directories(
   include
@@ -92,13 +93,58 @@ ament_target_dependencies(crazyflie_sitl
   tf2_ros
   geometry_msgs
   crtp_interfaces
+  rclcpp_components
 )
 
 install(TARGETS crazyflie_sitl
   DESTINATION lib/${PROJECT_NAME})
 
+# Also register the SITL crazyflie as a component
+add_library(crazyflie_sitl_component SHARED src/crazyflie_sitl.cpp)
+target_link_libraries(crazyflie_sitl_component 
+  quadcopter_model
+  communication_lib
+  firmware_launcher_lib
+)
+ament_target_dependencies(crazyflie_sitl_component
+  rclcpp
+  tf2_ros
+  geometry_msgs
+  crtp_interfaces
+  rclcpp_components)
+
+rclcpp_components_register_nodes(crazyflie_sitl_component "CrazyflieSITL")
+install(TARGETS crazyflie_sitl_component DESTINATION lib)
+
+# And build the container
+add_executable(container src/crazyflie_sitl_container.cpp)
+target_include_directories(container PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_compile_features(container PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
+ament_target_dependencies(
+  container
+  rclcpp
+  rclcpp_components
+  ament_index_cpp
+)
+target_link_libraries(container
+  yaml-cpp
+)
+
+install(TARGETS container
+  DESTINATION lib/${PROJECT_NAME})
+
+# Finally install the firmware to be executed with ros2 run
+
 install(PROGRAMS firmware/cf2
   DESTINATION lib/${PROJECT_NAME} 
+)
+
+# Copy config file
+install(
+  DIRECTORY config
+  DESTINATION share/${PROJECT_NAME}
 )
 
 if(BUILD_TESTING)
