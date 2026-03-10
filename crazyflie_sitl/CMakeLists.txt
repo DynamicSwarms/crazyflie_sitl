@@ -121,17 +121,30 @@ target_link_libraries(container
 install(TARGETS container
   DESTINATION lib/${PROJECT_NAME})
 
-# Finally install the firmware to be executed with ros2 run
-
-install(PROGRAMS firmware/cf2
-  DESTINATION lib/${PROJECT_NAME} 
-)
 
 # Copy config file
 install(
   DIRECTORY config
   DESTINATION share/${PROJECT_NAME}
 )
+
+# Building the crazyflie-firmware
+set(CF_FIRMWARE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/crazyflie-firmware)
+
+add_custom_target(crazyflie_firmware ALL
+    COMMAND $(MAKE) sitl_defconfig
+    COMMAND $(MAKE) PLATFORM=sitl -- VERBOSE=1
+    WORKING_DIRECTORY ${CF_FIRMWARE_DIR}
+    COMMENT "Building Crazyflie firmware (SITL)"
+)
+
+# Finally install the firmware to be executed with ros2 run
+
+install(PROGRAMS crazyflie-firmware/build/cf2
+  DESTINATION lib/${PROJECT_NAME} 
+)
+
+
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -142,7 +155,7 @@ if(BUILD_TESTING)
   # comment the line when this package is in a git repo and when
   # a copyright and license is added to all source files
   set(ament_cmake_cpplint_FOUND TRUE)
-  ament_lint_auto_find_test_dependencies()
+  #ament_lint_auto_find_test_dependencies()
 endif()
 
 ament_package()

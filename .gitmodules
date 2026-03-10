@@ -1,0 +1,4 @@
+[submodule "crazyflie_sitl/crazyflie-firmware"]
+	path = crazyflie_sitl/crazyflie-firmware
+	url = https://github.com/DynamicSwarms/crazyflie-firmware.git
+	branch = de-crazysim

@@ -95,6 +95,10 @@ sudo apt install python-is-python3
 
 mabye: remove gz from CMakeLists in sitl_make
 
+git submodule update --init --recursive
+git fetch --tags
+
+
 # Building
 
 From main repo: 

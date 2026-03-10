@@ -119,7 +119,6 @@ private:
         // Create a PCL point cloud
         pcl::PointCloud<pcl::PointXYZ> cloud;
 
-        // Iterate from 1 to 3 and add points (1,2,3)
         for (auto & cf : m_crazyflies)
         {
             /**
