@@ -20,17 +20,13 @@ Radiolink::Radiolink(uint16_t port,
 
     m_my_address.sin_family = AF_INET;
     m_my_address.sin_addr.s_addr = htonl(INADDR_ANY);
-    m_my_address.sin_port = htons(0);
+    m_my_address.sin_port = htons(port);
 
     if (bind(m_fd, reinterpret_cast<sockaddr*>(&m_my_address), m_address_len) < 0) {
         close(m_fd);
         m_fd = -1;
         throw std::runtime_error("Radiolink: bind() failed");
     }
-
-    m_remote_address.sin_family = AF_INET;
-    m_remote_address.sin_addr.s_addr = htonl(INADDR_ANY);
-    m_remote_address.sin_port = htons(port);
 
     // Set socket to non-blocking mode
     int flags = fcntl(m_fd, F_GETFL, 0);
@@ -58,11 +54,11 @@ Radiolink::handle_radio_communication()
    
 
    // For each received packet we need to send a packet back
-   bool send_nullpacket_in_any_case = handle_from_radio_packets();
-   handle_to_radio_packets(send_nullpacket_in_any_case);  
+   handle_from_radio_packets();
+   handle_to_radio_packets();  
 }
 
-void Radiolink::handle_to_radio_packets(bool send_nullpacket_in_any_case)
+void Radiolink::handle_to_radio_packets()
 {
     sitl_communication::packets::queue_packet out_packet;
     out_packet.data_length = 0;
@@ -88,9 +84,6 @@ void Radiolink::handle_to_radio_packets(bool send_nullpacket_in_any_case)
         // if (out_packet.data[0] != 0xF3)
         //     std::cerr << "Sending to radio: " << std::hex << int(out_packet.data[0]) << " queue: " << int(m_firmware_to_radio_queue->empty()) << std::endl;
       
-    } else if (send_nullpacket_in_any_case > 0) {
-        out_packet.data[0] = 0xF3;
-        out_packet.data_length = 1;
     }
     
     
@@ -103,13 +96,13 @@ void Radiolink::handle_to_radio_packets(bool send_nullpacket_in_any_case)
             0,
             reinterpret_cast<const sockaddr*>(&m_remote_address),
             m_address_len
-        );
+        ); 
 
     
     }
 }
 
-bool
+void
 Radiolink::handle_from_radio_packets()
 {
     uint8_t buffer[256];
@@ -122,9 +115,5 @@ Radiolink::handle_from_radio_packets()
         m_radio_to_firmware_queue->push(packet);
 
         m_connected = true;
-
-        //std::cerr << std::hex << "Received from Radio: " << int(buffer[0]) << std::endl;
-        return false;
     }
-    return false;
 }

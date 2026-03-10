@@ -24,8 +24,8 @@ public:
     bool is_connected() {return m_connected;};
 
 private: 
-    void handle_to_radio_packets(bool send_nullpacket_in_any_case);
-    bool handle_from_radio_packets();
+    void handle_to_radio_packets();
+    void handle_from_radio_packets();
 private: 
     int m_fd{-1};
         
