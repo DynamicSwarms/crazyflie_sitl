@@ -1,4 +1,4 @@
-name: Test Crazyflie Client
+name: Test Crazyflie with crazyflie-lib-python
 
 on:
   push:
@@ -12,24 +12,18 @@ permissions:
 env: 
   ROS_CI_DESKTOP: "`lsb_release -cs`"
   ROS_PARALLEL_JOBS: "-j8 -16"
-
+  
 jobs:
   test-client:
     runs-on: ubuntu-22.04
 
+    container:
+      image: rostooling/setup-ros-docker:ubuntu-jammy-ros-humble-desktop-latest
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install ROS Humble
-        uses: ros-tooling/setup-ros@v0.7
-        with: 
-          required-ros-distributions: humble
-
       - name: Install dependencies
         run: |
+          sudo apt update
           sudo apt install -y \
             cmake \
             build-essential \
@@ -39,20 +33,22 @@ jobs:
             libpcl-io1.12 \
             python3.10-venv
 
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
       - name: Build crazyflie_sitl
+        shell: bash
         run: |
           source /opt/ros/humble/setup.bash
           colcon build
 
       - name: Setup Python environment
+        shell: bash
         run: |
           python3 -m venv crazy_venv
           source crazy_venv/bin/activate
-
-          git clone https://github.com/bitcraze/crazyflie-clients-python
-          cd crazyflie-clients-python
-          pip install -e .
-          cd ..
 
           git clone https://github.com/bitcraze/crazyflie-lib-python
           cd crazyflie-lib-python
@@ -60,14 +56,16 @@ jobs:
           cd ..
 
       - name: Launch SITL
+        shell: bash
         run: |
           source /opt/ros/humble/setup.bash
           source install/setup.bash
 
           ros2 run crazyflie_sitl crazyflie_sitl --ros-args -p id:=0 &
-          sleep 5
+          sleep 2
 
       - name: Test Crazyflie connection
+        shell: bash
         run: |
           source crazy_venv/bin/activate
 
@@ -110,6 +108,7 @@ jobs:
 
           python test_connection.py
       - name: Test Crazyflie takeoff
+        shell: bash
         run: |
           source crazy_venv/bin/activate
 
