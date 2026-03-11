@@ -1,0 +1,183 @@
+name: Test Crazyflie Client
+
+on:
+  push:
+    branches: 
+      - main
+  pull_request:
+    branches: 
+      - main
+permissions: 
+  contents: write
+env: 
+  ROS_CI_DESKTOP: "`lsb_release -cs`"
+  ROS_PARALLEL_JOBS: "-j8 -16"
+
+jobs:
+  test-client:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install ROS Humble
+        uses: ros-tooling/setup-ros@v0.7
+        with: 
+          required-ros-distributions: humble
+
+      - name: Install dependencies
+        run: |
+          sudo apt install -y \
+            cmake \
+            build-essential \
+            libeigen3-dev \
+            libpcl-dev \
+            libpcl-common1.12 \
+            libpcl-io1.12 \
+            python3.10-venv
+
+      - name: Build crazyflie_sitl
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon build
+
+      - name: Setup Python environment
+        run: |
+          python3 -m venv crazy_venv
+          source crazy_venv/bin/activate
+
+          git clone https://github.com/bitcraze/crazyflie-clients-python
+          cd crazyflie-clients-python
+          pip install -e .
+          cd ..
+
+          git clone https://github.com/bitcraze/crazyflie-lib-python
+          cd crazyflie-lib-python
+          pip install -e .
+          cd ..
+
+      - name: Launch SITL
+        run: |
+          source /opt/ros/humble/setup.bash
+          source install/setup.bash
+
+          ros2 run crazyflie_sitl crazyflie_sitl --ros-args -p id:=0 &
+          sleep 5
+
+      - name: Test Crazyflie connection
+        run: |
+          source crazy_venv/bin/activate
+
+          cat << 'EOF' > test_connection.py
+          import time
+          import cflib.crtp
+          from cflib.crazyflie import Crazyflie
+
+          URI = "udp://127.0.0.1:19850"
+
+          connected = False
+
+          def connected_cb(link_uri):
+              global connected
+              print(f"Connected to {link_uri}")
+              connected = True
+
+          def failed_cb(link_uri, msg):
+              print(f"Connection failed: {msg}")
+              exit(1)
+
+          cflib.crtp.init_drivers()
+
+          cf = Crazyflie()
+          cf.connected.add_callback(connected_cb)
+          cf.connection_failed.add_callback(failed_cb)
+
+          cf.open_link(URI)
+
+          timeout = time.time() + 10
+          while not connected and time.time() < timeout:
+              time.sleep(0.1)
+
+          if not connected:
+              raise RuntimeError("Connection timeout")
+
+          print("Connection test successful")
+          cf.close_link()
+          EOF
+
+          python test_connection.py
+      - name: Test Crazyflie takeoff
+        run: |
+          source crazy_venv/bin/activate
+
+          cat << 'EOF' > test_takeoff.py
+          import time
+          import threading
+
+          import cflib.crtp
+          from cflib.crazyflie import Crazyflie
+          from cflib.crazyflie.log import LogConfig
+          from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
+          from cflib.positioning.motion_commander import MotionCommander
+
+          URI = "udp://127.0.0.1:19850"
+
+          positions = []
+
+          def log_pos_callback(timestamp, data, logconf):
+              z = data["stateEstimate.z"]
+              print("Z:", z)
+              positions.append(z)
+
+
+          def run():
+
+              cflib.crtp.init_drivers()
+
+              with SyncCrazyflie(URI, cf=Crazyflie(rw_cache="./cache")) as scf:
+
+                  cf = scf.cf
+
+                  print("Setting estimator/controller")
+
+                  cf.param.set_value("stabilizer.estimator", "2")
+                  cf.param.set_value("stabilizer.controller", "2")
+
+                  time.sleep(1)
+
+                  logconf = LogConfig(name="Position", period_in_ms=100)
+                  logconf.add_variable("stateEstimate.z", "float")
+
+                  cf.log.add_config(logconf)
+                  logconf.data_received_cb.add_callback(log_pos_callback)
+                  logconf.start()
+
+                  print("Takeoff")
+
+                  with MotionCommander(scf, default_height=0.5):
+                      time.sleep(3)
+
+                  print("Landing done")
+
+                  logconf.stop()
+
+              if len(positions) == 0:
+                  raise RuntimeError("No position data received")
+
+              max_z = max(positions)
+
+              print("Max height:", max_z)
+
+              if max_z < 0.2:
+                  raise RuntimeError("Drone did not take off")
+
+              print("Takeoff test successful!")
+
+
+          if __name__ == "__main__":
+              run()
+          EOF
+          python test_takeoff.py
