@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.12)
 project(crazyflie_sitl)
 
+# Ensure installed binaries can resolve package-local shared libraries.
+set(CMAKE_INSTALL_RPATH "$ORIGIN;$ORIGIN/${PROJECT_NAME};$ORIGIN/../${PROJECT_NAME}")
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+
 set(CMAKE_CXX_STANDARD 20)
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -10,6 +14,7 @@ cmake_policy(SET CMP0074 NEW) ## For PCL library
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(yaml-cpp REQUIRED)
@@ -32,7 +37,15 @@ target_compile_features(crazyflie_sitl PUBLIC c_std_99 cxx_std_20)  # Require C9
 
 # Build quadcopter_model library
 add_subdirectory(quadcopter_model)
-
+install(
+  DIRECTORY quadcopter_model/include/
+  DESTINATION include
+)
+install(TARGETS quadcopter_model
+  LIBRARY DESTINATION lib/${PROJECT_NAME}
+  ARCHIVE DESTINATION lib/${PROJECT_NAME}
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
+)
 ## Build connection library
 
 set(
@@ -71,15 +84,23 @@ target_link_libraries(crazyflie_sitl
   communication_lib
   firmware_launcher_lib
 )
-ament_target_dependencies(crazyflie_sitl
-  rclcpp
-  tf2_ros
-  geometry_msgs
-  rclcpp_components
+target_link_libraries(crazyflie_sitl
+  rclcpp::rclcpp
+  tf2_ros::tf2_ros
+  geometry_msgs::geometry_msgs
+  rclcpp_components::component
 )
 
 install(TARGETS crazyflie_sitl
   DESTINATION lib/${PROJECT_NAME})
+
+install(TARGETS
+  communication_lib
+  firmware_launcher_lib
+  LIBRARY DESTINATION lib/${PROJECT_NAME}
+  ARCHIVE DESTINATION lib/${PROJECT_NAME}
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
+)
 
 # Also register the SITL crazyflie as a component
 add_library(crazyflie_sitl_component SHARED src/crazyflie_sitl.cpp)
@@ -88,11 +109,11 @@ target_link_libraries(crazyflie_sitl_component
   communication_lib
   firmware_launcher_lib
 )
-ament_target_dependencies(crazyflie_sitl_component
-  rclcpp
-  tf2_ros
-  geometry_msgs
-  rclcpp_components)
+target_link_libraries(crazyflie_sitl_component
+  rclcpp::rclcpp
+  tf2_ros::tf2_ros
+  geometry_msgs::geometry_msgs
+  rclcpp_components::component)
 
 rclcpp_components_register_nodes(crazyflie_sitl_component "CrazyflieSITL")
 install(TARGETS crazyflie_sitl_component DESTINATION lib)
@@ -103,16 +124,15 @@ target_include_directories(container PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 target_compile_features(container PUBLIC c_std_99 cxx_std_20)  # Require C99 and C++20
-ament_target_dependencies(
-  container
-  rclcpp
-  rclcpp_components
-  sensor_msgs
-  pcl_conversions
-  PCL
-  ament_index_cpp
-  tf2_ros
-)
+target_link_libraries(container
+  rclcpp::rclcpp
+  rclcpp_components::component
+  sensor_msgs::sensor_msgs
+  pcl_conversions::pcl_conversions
+  ament_index_cpp::ament_index_cpp
+  tf2_ros::tf2_ros
+  ${PCL_LIBRARIES})
+
 target_link_libraries(container
   yaml-cpp
   quadcopter_model
@@ -146,6 +166,19 @@ install(PROGRAMS crazyflie-firmware/build/cf2
 )
 
 
+
+ament_export_include_directories(include)
+ament_export_include_directories(quadcopter_model/include)
+ament_export_libraries(
+  quadcopter_model
+  communication_lib
+  firmware_launcher_lib
+)
+ament_export_dependencies(
+  rclcpp
+  tf2_ros
+  geometry_msgs
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

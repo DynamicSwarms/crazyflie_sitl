@@ -38,7 +38,7 @@ The package includes the firmware and provides a does it all `ros2 run` entry po
    sudo apt install cmake build-essential
    ```
 
-   If you installed `ros-humble-desktop`, there are no additional dependencies.  
+   If you installed `ros-lyrical-desktop`, there are no additional dependencies.  
    If you installed a lightweight version, you might need the following packages:
 
    - `libeigen3-dev`
@@ -56,7 +56,7 @@ The package includes the firmware and provides a does it all `ros2 run` entry po
 
   ```bash
   cd crazyflie_sitl
-  source /opt/ros/humble/setup.bash
+  source /opt/ros/lyrical/setup.bash
   colcon build
   ```
 
@@ -75,8 +75,8 @@ The package includes the firmware and provides a does it all `ros2 run` entry po
 ### 1. Install correct version of the client
 
   ```
-  sudo apt install python3.10-venv
-  python -m venv crazy_venv
+  sudo apt install python3.14-venv
+  python3 -m venv crazy_venv
   source crazy_venv/bin/activate
 
   git clone https://github.com/bitcraze/crazyflie-clients-python
@@ -94,6 +94,7 @@ The package includes the firmware and provides a does it all `ros2 run` entry po
 ### 2. Launch the client
 
   ```
+  source crazy_venv/bin/activate
   python3 crazyflie-clients-python/bin/cfclient
   ```
 
@@ -107,7 +108,9 @@ The package includes the firmware and provides a does it all `ros2 run` entry po
 
 ### 4. First flight with client
 
-  For unknown reasons you must set the ESTIMATOR to Kalman and the CONTROLLER to Mellinger.
+  > ! The Crazyflie Starts with Complementary Estimator as default. Which will not work, because it cannot use the external position information provided by the Quadcopter Model.
+
+  Because of this you must set the ESTIMATOR to Kalman and the CONTROLLER to Mellinger.
   For this open the Parameters-Tab and select `stabilizer.controller` and set to `2`. 
   Do the same for `stabilizer.estimator` (also set to `2`).
 
@@ -142,7 +145,7 @@ The package includes the firmware and provides a does it all `ros2 run` entry po
   Now colcon build all at once: 
 
   ```bash
-  source /opt/ros/humble/setup.bash
+  source /opt/ros/lyrical/setup.bash
   colcon build
   ```
 
