@@ -159,7 +159,7 @@ The package includes the firmware and provides a does it all `ros2 run` entry po
   source install/setup.bash
   ```
 
-  #### First Terminal: `ros2 launch crazyflie_hardware_bringup hardware.launch.py`
+  #### First Terminal: `ros2 launch crazyflie_hardware_bringup hardware.launch.py sitl_udp_radio:=true`
   #### Second Terminal: `ros2 run crazyflie_sitl crazyflie_sitl --ros-args -p id:=0`
 
   #### Third Terminal: 
@@ -172,12 +172,17 @@ The package includes the firmware and provides a does it all `ros2 run` entry po
   The `TAB` key is your friend and will autocomplete most of it.
 
   ```
-  ros2 service call /crazyflie_hardware_gateway/add_crazyflie crazyflie_hardware_gateway_interfaces/srv/AddCrazyflie "channel: 80
-      id: 0
-      initial_position:
-        x: 0.0
-        y: 0.0
-        z: 0.0
+  ros2 service call /crazyflie_hardware_gateway/add_crazyflie crazyflie_interfaces/srv/AddCrazyflie "uri: 'radio://0/80/2/E7E7E7E700'
+      initial_pose:
+        position:
+          x: 0.0
+          y: 0.0
+          z: 0.0
+        orientation:
+          x: 0.0
+          y: 0.0
+          z: 0.0
+          w: 0.0
       type: default" 
   ```
 
