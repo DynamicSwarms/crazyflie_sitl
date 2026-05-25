@@ -160,7 +160,7 @@ The package includes the firmware and provides a does it all `ros2 run` entry po
   ```
 
   #### First Terminal: `ros2 launch crazyflie_hardware_bringup hardware.launch.py sitl_udp_radio:=true`
-  #### Second Terminal: `ros2 run crazyflie_sitl crazyflie_sitl --ros-args -p id:=0`
+  #### Second Terminal: `ros2 run crazyflie_sitl crazyflie_sitl --ros-args -p id:=0 -p initial_position:="[0.0, 0.0, 0.0]"`
 
   #### Third Terminal: 
 
