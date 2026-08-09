@@ -100,6 +100,25 @@ CrazyflieSITL::CrazyflieSITL(const rclcpp::NodeOptions & options)
     1ms,  // 1000 Hz
     std::bind(&CrazyflieSITL::control_loop, this)
   );
+  const std::string simulation_prefix = "/cf" + std::to_string(p_id) + "/simulation";
+  m_crash_service = this->create_service<std_srvs::srv::Trigger>(
+    simulation_prefix + "/crash",
+    [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>,
+           std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
+      m_crashed = true;
+      send_crash_state();
+      response->success = true;
+      response->message = "SITL motor thrust disabled";
+    });
+  m_battery_subscription = this->create_subscription<std_msgs::msg::Float32>(
+    simulation_prefix + "/set_battery", 1,
+    [this](const std_msgs::msg::Float32::SharedPtr message) {
+      if (message->data >= 0.0f && message->data <= 5.0f) {
+        send_battery_voltage(message->data);
+      } else {
+        RCLCPP_WARN(get_logger(), "Ignoring invalid simulated battery voltage: %.2f V", message->data);
+      }
+    });
   RCLCPP_INFO(this->get_logger(), "Started CrazyflieSITL node with ID: %d, and initial position: [%f, %f, %f]", p_id, p_initial_position[0], p_initial_position[1], p_initial_position[2]);
 }
 
@@ -137,6 +156,10 @@ void CrazyflieSITL::get_imu_packet(const QuadState& state, uint8_t* buffer, size
 
 void CrazyflieSITL::update_thrust_command()
 {
+  if (m_crashed) {
+    m_cmd.thrusts = quadcopter::Vector<4>::Zero();
+    return;
+  }
   float pwm_norm[4];
   uint16_t pwms_received[4];
   
@@ -151,6 +174,21 @@ void CrazyflieSITL::update_thrust_command()
     thrusts[i] = pwm_to_thrust(pwm_norm[i]); // Give a bit more thrust for testting
   }
   m_cmd.thrusts = quadcopter::Vector<4>(thrusts[0],thrusts[1], thrusts[2], thrusts[3]); 
+}
+
+void CrazyflieSITL::send_battery_voltage(float voltage)
+{
+  sitl_communication::packets::crtp_battery_packet_s packet;
+  packet.voltage = voltage;
+  m_communication->send_firmware_packet(
+    reinterpret_cast<const uint8_t*>(&packet), sizeof(packet));
+}
+
+void CrazyflieSITL::send_crash_state()
+{
+  sitl_communication::packets::crtp_crash_packet_s packet;
+  m_communication->send_firmware_packet(
+    reinterpret_cast<const uint8_t*>(&packet), sizeof(packet));
 }
 
 

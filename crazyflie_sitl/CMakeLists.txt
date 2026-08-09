@@ -22,6 +22,8 @@ find_package(tf2_ros REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(PCL REQUIRED)
 
@@ -88,6 +90,8 @@ target_link_libraries(crazyflie_sitl
   rclcpp::rclcpp
   tf2_ros::tf2_ros
   geometry_msgs::geometry_msgs
+  std_msgs::std_msgs
+  std_srvs::std_srvs
   rclcpp_components::component
 )
 
@@ -113,6 +117,8 @@ target_link_libraries(crazyflie_sitl_component
   rclcpp::rclcpp
   tf2_ros::tf2_ros
   geometry_msgs::geometry_msgs
+  std_msgs::std_msgs
+  std_srvs::std_srvs
   rclcpp_components::component)
 
 rclcpp_components_register_nodes(crazyflie_sitl_component "CrazyflieSITL")
@@ -131,6 +137,8 @@ target_link_libraries(container
   pcl_conversions::pcl_conversions
   ament_index_cpp::ament_index_cpp
   tf2_ros::tf2_ros
+  std_msgs::std_msgs
+  std_srvs::std_srvs
   ${PCL_LIBRARIES})
 
 target_link_libraries(container

@@ -26,6 +26,8 @@ enum SensorTypeSim_e {
   SENSOR_GYRO_ACC_SIM   = 0,
   SENSOR_MAG_SIM        = 1,
   SENSOR_BARO_SIM       = 2,
+  SENSOR_BATTERY_SIM    = 3,
+  SENSOR_CRASH_SIM      = 4,
 };
 
 struct Axis3i16 {
@@ -65,6 +67,17 @@ struct crtp_pose_packet_s {
   uint8_t header = (uint8_t) CRTP_PORT_LOCALIZATION << 4 | LOCALIZATION_GENERIC_CHANNEL;
   uint8_t type = LOCALIZATION_GENERIC_EXT_POSE_TYPE;
   pose_s pose_data;
+} __attribute__((packed));
+
+struct crtp_battery_packet_s {
+  uint8_t header = (uint8_t)((CRTP_PORT_SETPOINT_SIM << 4) | 0);
+  uint8_t type = SENSOR_BATTERY_SIM;
+  float voltage;
+} __attribute__((packed));
+
+struct crtp_crash_packet_s {
+  uint8_t header = (uint8_t)((CRTP_PORT_SETPOINT_SIM << 4) | 0);
+  uint8_t type = SENSOR_CRASH_SIM;
 } __attribute__((packed));
 
 struct crtp_pwm_packet_s {

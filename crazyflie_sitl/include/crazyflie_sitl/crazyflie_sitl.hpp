@@ -6,6 +6,8 @@
 #include <cstdint>
 
 #include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/float32.hpp>
+#include <std_srvs/srv/trigger.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <tf2_ros/transform_broadcaster.hpp>
 
@@ -42,6 +44,8 @@ private:
     void publish_tf(const quadcopter::QuadState& state);
     void get_pose_packet(const quadcopter::QuadState& state, uint8_t* buffer, size_t& length);
     void get_imu_packet(const quadcopter::QuadState& state, uint8_t* buffer, size_t& length);
+    void send_battery_voltage(float voltage);
+    void send_crash_state();
 
     // Parameters
     uint8_t p_id;
@@ -72,4 +76,7 @@ private:
     // Output buffer
     uint8_t m_out_packet_buffer[32];
     size_t m_out_packet_length;
+    bool m_crashed{false};
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr m_crash_service;
+    rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr m_battery_subscription;
 };
