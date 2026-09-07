@@ -21,14 +21,16 @@ SITLCommunication::SITLCommunication(
 
 void SITLCommunication::handle_comms()
 {
-    if (!m_radio_to_firmware_queue->empty())
+    m_radio_link->handle_from_radio_packets();
+
+    while (!m_radio_to_firmware_queue->empty())
     {
         auto packet = m_radio_to_firmware_queue->front();
         m_radio_to_firmware_queue->pop();
         send_firmware_packet(packet.data, packet.data_length);
     }
 
-    m_radio_link->handle_radio_communication();
+    m_radio_link->handle_to_radio_packets();
 }
 
 void SITLCommunication::send_firmware_packet(const uint8_t* packet, size_t packet_length)

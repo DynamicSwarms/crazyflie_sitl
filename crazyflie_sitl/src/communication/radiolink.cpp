@@ -76,17 +76,6 @@ void Radiolink::handle_to_radio_packets()
             out_packet.data_length = 1;
         }
     }
-    else if (!m_firmware_to_radio_queue->empty())
-    { 
-        out_packet = m_firmware_to_radio_queue->front();  
-        m_firmware_to_radio_queue->pop();
-
-        // if (out_packet.data[0] != 0xF3)
-        //     std::cerr << "Sending to radio: " << std::hex << int(out_packet.data[0]) << " queue: " << int(m_firmware_to_radio_queue->empty()) << std::endl;
-      
-    }
-    
-    
     if (out_packet.data_length > 0)
     {    
         sendto(
@@ -98,7 +87,20 @@ void Radiolink::handle_to_radio_packets()
             m_address_len
         ); 
 
-    
+    }
+
+    while (is_connected() && !m_firmware_to_radio_queue->empty())
+    {
+        out_packet = m_firmware_to_radio_queue->front();
+        m_firmware_to_radio_queue->pop();
+        sendto(
+            m_fd,
+            out_packet.data,
+            out_packet.data_length,
+            0,
+            reinterpret_cast<const sockaddr*>(&m_remote_address),
+            m_address_len
+        );
     }
 }
 
@@ -106,8 +108,10 @@ void
 Radiolink::handle_from_radio_packets()
 {
     uint8_t buffer[256];
-    ssize_t recv_len = recvfrom(m_fd, buffer, 32, 0, (struct sockaddr *)&m_remote_address, &m_address_len);
-    if (recv_len > 0)
+    ssize_t recv_len;
+    while ((recv_len = recvfrom(
+        m_fd, buffer, 32, 0,
+        reinterpret_cast<sockaddr*>(&m_remote_address), &m_address_len)) > 0)
     {
         sitl_communication::packets::queue_packet packet;
         std::memcpy(packet.data, buffer, recv_len);
